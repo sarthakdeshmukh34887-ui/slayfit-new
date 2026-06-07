@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "SlayFit",
+    "slug": "fitai-tracker",
+    "scheme": "slayfit",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0D0D"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.slayfit"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0D0D0D"
+      },
+      "package": "com.slayfit"
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font",
+      "@react-native-google-signin/google-signin"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a11d50c9-fc7a-4bff-bdbd-0ed2d836543c"
+      }
+    },
+    "owner": "sarthak55"
+  }
+}
