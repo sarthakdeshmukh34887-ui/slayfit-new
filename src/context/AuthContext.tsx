@@ -88,7 +88,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // Helper logic to ensure user account references exist in custom table structures
-  // Helper logic to ensure user account references exist in custom table structures
   const syncUserAccountTable = async (userId: string, name: string, email: string, isAdmin: boolean) => {
     try {
       let account = await storageService.getUserAccountByEmail(email);
@@ -136,6 +135,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       console.error('[AuthContext] Error syncing accounts table:', e.message);
     }
   };
+
   useEffect(() => {
     if (GoogleSignin?.configure) {
       GoogleSignin.configure({
@@ -150,10 +150,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const isAdmin = email === ADMIN_CREDENTIALS.email;
         const name = session.user.user_metadata?.full_name || session.user.user_metadata?.name || email.split('@')[0];
 
-        // Standard forms log-in pipeline handler path
-        if (event === 'SIGNED_IN') {
+        // Only auto-trigger fallback syncing from background deep links if state is completely empty
+        if (event === 'SIGNED_IN' && !state.isAuthenticated) {
           await syncUserAccountTable(session.user.id, name, email, isAdmin);
-          await logLoginEvent(session.user.id, name, email, 'login');
         }
 
         setState(prev => ({
@@ -185,7 +184,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [state.isAuthenticated]);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setState(prev => ({ ...prev, loading: true, authError: null }));
@@ -229,6 +228,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return false;
         }
       }
+
+      if (data?.user) {
+        const emailStr = data.user.email || '';
+        const nameStr = data.user.user_metadata?.full_name || emailStr.split('@')[0];
+        const isAdminUser = emailStr === ADMIN_CREDENTIALS.email;
+        
+        await syncUserAccountTable(data.user.id, nameStr, emailStr, isAdminUser);
+        await logLoginEvent(data.user.id, nameStr, emailStr, 'login');
+      }
+
       return true;
     } catch (err) {
       setState(prev => ({ ...prev, loading: false, authError: 'Login failed. Please try again.' }));
@@ -260,6 +269,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const userId = authData.user?.id;
       if (!userId) throw new Error("No user ID returned from Supabase Auth");
 
+      const isAdmin = cleanEmail === ADMIN_CREDENTIALS.email;
+
       const account: UserAccount = {
         id: userId,
         name: data.name,
@@ -268,12 +279,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         goal: data.goal,
         weeklyTarget: data.weeklyTarget,
         joinDate: new Date().toISOString(),
-        isAdmin: cleanEmail === ADMIN_CREDENTIALS.email,
+        isAdmin,
         lastLogin: new Date().toISOString(),
         status: 'active',
       };
 
       await storageService.addUserAccount(account);
+      await syncUserAccountTable(userId, data.name, cleanEmail, isAdmin);
       await logLoginEvent(userId, data.name, cleanEmail, 'signup');
       return true;
     } catch (err: any) {
@@ -306,8 +318,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const name = user?.name || data.user.user_metadata?.full_name || email.split('@')[0];
       const isAdmin = email === ADMIN_CREDENTIALS.email;
 
-      // EXPLICIT TRIGGER CORRECTION: Force trace tracking to fire directly 
-      // instead of hoping the asynchronous deep link listener catches it.
       await syncUserAccountTable(data.user.id, name, email, isAdmin);
       await logLoginEvent(data.user.id, name, email, 'login');
 
@@ -333,6 +343,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (currentUser) {
       await logLoginEvent(currentUser.id, currentUser.name, currentUser.email, 'logout');
     }
+
+    try {
+      // FORCE RESET: Clears the native identity caching on Android/iOS devices 
+      // so the account choice modal explicitly prompts the user upon their next login.
+      if (GoogleSignin?.signOut) {
+        await GoogleSignin.signOut();
+      }
+    } catch (googleError) {
+      console.error('[AuthContext] Handshake clearing native Google session error:', googleError);
+    }
+
     await supabase.auth.signOut();
   };
 
